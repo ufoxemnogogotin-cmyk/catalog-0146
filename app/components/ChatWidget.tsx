@@ -44,24 +44,30 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [ably, setAbly] = useState<Ably.Realtime | null>(null);
+
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const clientId = useMemo(() => getOrCreateClientId(), []);
   const channelName = `chat:${roomId}`;
 
-  // Ably client (token auth from your API route)
-  const ably = useMemo(() => {
-const base =
-  typeof window !== "undefined"
-    ? window.location.origin
-    : "";
+  // ✅ Create Ably ONLY on client (after mount). Avoids Vercel/SSR build errors.
+  useEffect(() => {
+    const base = window.location.origin;
 
-return new Ably.Realtime({
-  authUrl: `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(clientId)}`,
-  clientId,
-});
+    const rt = new Ably.Realtime({
+      authUrl: `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(clientId)}`,
+      clientId,
+    });
 
+    setAbly(rt);
+
+    return () => {
+      try {
+        rt.close();
+      } catch {}
+    };
   }, [roomId, clientId]);
 
   // 1) JOIN room + load history
@@ -69,10 +75,8 @@ return new Ably.Realtime({
     let alive = true;
 
     (async () => {
-      // mark join (server keeps active set)
       await apiState({ action: "join", roomId, clientId });
 
-      // load last messages
       const res = await fetch(`/api/chat/state?roomId=${encodeURIComponent(roomId)}`);
       const data = await res.json();
 
@@ -85,17 +89,15 @@ return new Ably.Realtime({
     };
   }, [roomId, clientId]);
 
-  // 2) LEAVE room on tab close (sendBeacon is more reliable)
+  // 2) LEAVE room on tab close
   useEffect(() => {
     const onUnload = () => {
       try {
-        const blob = new Blob(
-          [JSON.stringify({ action: "leave", roomId, clientId })],
-          { type: "application/json" }
-        );
+        const blob = new Blob([JSON.stringify({ action: "leave", roomId, clientId })], {
+          type: "application/json",
+        });
         navigator.sendBeacon("/api/chat/state", blob);
       } catch {
-        // fallback
         fetch("/api/chat/state", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -111,6 +113,8 @@ return new Ably.Realtime({
 
   // 3) Subscribe realtime
   useEffect(() => {
+    if (!ably) return;
+
     let mounted = true;
     const ch = ably.channels.get(channelName);
 
@@ -129,9 +133,6 @@ return new Ably.Realtime({
       try {
         ch.unsubscribe();
       } catch {}
-      try {
-        ably.close();
-      } catch {}
     };
   }, [ably, channelName]);
 
@@ -142,10 +143,9 @@ return new Ably.Realtime({
   }, [open, messages]);
 
   async function publishAndStore(payload: Msg) {
-    // store in OUR server RAM (history)
     await apiState({ action: "append", roomId, message: payload });
 
-    // publish realtime
+    if (!ably) return; // ✅ guard
     const ch = ably.channels.get(channelName);
     await ch.publish("msg", payload);
   }
@@ -156,7 +156,6 @@ return new Ably.Realtime({
 
     const msg: Msg = { id: uid(), from: clientId, type: "text", text: t, ts: Date.now() };
 
-    // optimistic UI
     setMessages((prev) => [...prev, msg].slice(-50));
     setInput("");
 
@@ -172,6 +171,7 @@ return new Ably.Realtime({
       alert("Снимката е твърде голяма (max ~800KB за тест).");
       return;
     }
+
     const reader = new FileReader();
     reader.onload = async () => {
       const url = String(reader.result || "");
@@ -193,7 +193,6 @@ return new Ably.Realtime({
   }
 
   function clearLocalOnly() {
-    // чисти само при теб (не за всички)
     setMessages([]);
     setInput("");
   }
