@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Inter } from "next/font/google";
 
-import { useSearchParams } from "next/navigation";
 import ChatWidget from "@/app/components/ChatWidget";
 
 const inter = Inter({ subsets: ["latin", "cyrillic"], weight: ["500"] });
@@ -140,9 +139,9 @@ function SizeInline({ mm }: { mm: number }) {
   );
 }
 
-export default function CatalogPage() {
-const searchParams = useSearchParams();
-const chatId = searchParams.get("chat") || "default";
+export default function CatalogClient({ chatId }: { chatId: string }) {
+
+
 
   const [open, setOpen] = useState<Item | null>(null);
 
