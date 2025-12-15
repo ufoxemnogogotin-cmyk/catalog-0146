@@ -16,9 +16,10 @@ export async function GET(req: Request) {
   // token only for конкретната "стая"
   const tokenRequest = await rest.auth.createTokenRequest({
     clientId,
-    capability: JSON.stringify({
-      [`chat:${roomId}`]: ["publish", "subscribe", "presence"],
-    }),
+capability: JSON.stringify({
+  [`chat:${roomId}`]: ["publish", "subscribe"],
+}),
+
   });
 
   return NextResponse.json(tokenRequest);

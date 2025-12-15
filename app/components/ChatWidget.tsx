@@ -52,10 +52,16 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
 
   // Ably client (token auth from your API route)
   const ably = useMemo(() => {
-    return new Ably.Realtime({
-      authUrl: `/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(clientId)}`,
-      clientId,
-    });
+const base =
+  typeof window !== "undefined"
+    ? window.location.origin
+    : "";
+
+return new Ably.Realtime({
+  authUrl: `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(clientId)}`,
+  clientId,
+});
+
   }, [roomId, clientId]);
 
   // 1) JOIN room + load history
