@@ -139,7 +139,14 @@ function SizeInline({ mm }: { mm: number }) {
   );
 }
 
-export default function CatalogClient({ chatId }: { chatId: string }) {
+export default function CatalogClient({
+  chatId,
+  role = "client",
+}: {
+  chatId: string;
+  role?: "client" | "client1";
+}) {
+
 
 
 
@@ -283,7 +290,8 @@ export default function CatalogClient({ chatId }: { chatId: string }) {
           </div>
         </div>
       )}
-<ChatWidget roomId={chatId} />   
+<ChatWidget roomId={chatId} role={role} />
+
       <style>{`
         :root{
           --line:#111;

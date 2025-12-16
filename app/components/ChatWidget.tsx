@@ -37,6 +37,7 @@ export default function ChatWidget({
   role?: "client" | "client1";
 }) {
 
+
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
