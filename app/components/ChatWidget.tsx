@@ -18,17 +18,7 @@ function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-function getOrCreateClientId(storageKey: string) {
-  try {
-    const saved = sessionStorage.getItem(storageKey);
-    if (saved) return saved;
-    const fresh = `c_${uid()}`;
-    sessionStorage.setItem(storageKey, fresh);
-    return fresh;
-  } catch {
-    return `c_${uid()}`;
-  }
-}
+
 
 async function apiState(payload: any) {
   await fetch("/api/chat/state", {
@@ -41,11 +31,12 @@ async function apiState(payload: any) {
 
 export default function ChatWidget({
   roomId = "default",
-  clientIdKey = "sevato_chat_client_id_v1",
+  role = "client",
 }: {
   roomId?: string;
-  clientIdKey?: string;
+  role?: "client" | "client1";
 }) {
+
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -53,7 +44,8 @@ export default function ChatWidget({
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  const clientId = useMemo(() => getOrCreateClientId(clientIdKey), [clientIdKey]);
+const clientId = role;
+
   const channelName = `chat:${roomId}`;
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
