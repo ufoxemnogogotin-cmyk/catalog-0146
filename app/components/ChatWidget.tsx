@@ -7,7 +7,7 @@ import * as Ably from "ably";
 
 type Msg = {
   id: string;
-  from: string; // clientId
+  from: string;
   type: "text" | "image";
   text?: string;
   imageDataUrl?: string;
@@ -44,7 +44,6 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [ably, setAbly] = useState<Ably.Realtime | null>(null);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -52,21 +51,27 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   const clientId = useMemo(() => getOrCreateClientId(), []);
   const channelName = `chat:${roomId}`;
 
-  // ✅ Create Ably ONLY on client (after mount). Avoids Vercel/SSR build errors.
+  const ablyRef = useRef<Ably.Realtime | null>(null);
+
+  // ✅ init Ably ONLY on client after mount
   useEffect(() => {
     const base = window.location.origin;
+    const authUrl = `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(
+      clientId
+    )}`;
 
     const rt = new Ably.Realtime({
-      authUrl: `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(clientId)}`,
       clientId,
+      authUrl,
     });
 
-    setAbly(rt);
+    ablyRef.current = rt;
 
     return () => {
       try {
         rt.close();
       } catch {}
+      ablyRef.current = null;
     };
   }, [roomId, clientId]);
 
@@ -113,10 +118,11 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
 
   // 3) Subscribe realtime
   useEffect(() => {
-    if (!ably) return;
+    const rt = ablyRef.current;
+    if (!rt) return;
 
     let mounted = true;
-    const ch = ably.channels.get(channelName);
+    const ch = rt.channels.get(channelName);
 
     ch.subscribe("msg", (msg) => {
       if (!mounted) return;
@@ -134,7 +140,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
         ch.unsubscribe();
       } catch {}
     };
-  }, [ably, channelName]);
+  }, [channelName]);
 
   // 4) autoscroll
   useEffect(() => {
@@ -142,11 +148,62 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [open, messages]);
 
+  // ✅ 5) HARD scroll lock (body + iOS touchmove block)
+  useEffect(() => {
+    if (!open) return;
+
+    const scrollY = window.scrollY;
+    const body = document.body;
+    const html = document.documentElement;
+
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyWidth: body.style.width,
+      htmlOverflow: html.style.overflow,
+    };
+
+    // freeze page
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+
+    // iOS: prevent scrolling outside the chat
+    const onTouchMove = (e: TouchEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // allow scroll inside the chat panel body
+      if (target.closest(".cw-body")) return;
+
+      e.preventDefault();
+    };
+
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+
+    return () => {
+      document.removeEventListener("touchmove", onTouchMove);
+
+      html.style.overflow = prev.htmlOverflow;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.position = prev.bodyPosition;
+      body.style.top = prev.bodyTop;
+      body.style.width = prev.bodyWidth;
+
+      window.scrollTo(0, scrollY);
+    };
+  }, [open]);
+
   async function publishAndStore(payload: Msg) {
     await apiState({ action: "append", roomId, message: payload });
 
-    if (!ably) return; // ✅ guard
-    const ch = ably.channels.get(channelName);
+    const rt = ablyRef.current;
+    if (!rt) return;
+
+    const ch = rt.channels.get(channelName);
     await ch.publish("msg", payload);
   }
 
@@ -167,8 +224,10 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   }
 
   async function onPickImage(file: File) {
-    if (file.size > 800 * 1024) {
-      alert("Снимката е твърде голяма (max ~800KB за тест).");
+    const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // ✅ 8MB
+
+    if (file.size > MAX_IMAGE_BYTES) {
+      alert("Снимката е твърде голяма (max 8MB).");
       return;
     }
 
@@ -226,7 +285,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
 
           <div className="cw-body">
             {messages.length === 0 ? (
-              <div className="cw-empty">Пиши тук 👇 (историята живее докато има отворени табове)</div>
+              <div className="cw-empty">Пиши тук 👇</div>
             ) : (
               <div className="cw-msgs">
                 {messages.map((m) => {
@@ -352,7 +411,15 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
           cursor:pointer;
         }
 
-        .cw-body{ flex:1; padding: 10px; overflow:auto; background:#fff; }
+        .cw-body{
+          flex:1;
+          padding: 10px;
+          overflow:auto;
+          background:#fff;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
+          touch-action: pan-y;
+        }
         .cw-empty{ font-size: 13px; opacity: .7; padding: 10px; color:#111; }
 
         .cw-msgs{ display:flex; flex-direction: column; gap: 10px; }
@@ -369,6 +436,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
           line-height: 1.25;
           background:#fff;
           color:#111;
+          word-break: break-word;
         }
         .cw-imgBubble{ padding: 6px; }
         .cw-img{ width: 220px; max-width: 100%; border-radius: 10px; display:block; }

@@ -1,4 +1,8 @@
+import { NextResponse } from "next/server";
+import { kv } from "@vercel/kv";
+
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type Msg = {
   id: string;
@@ -9,81 +13,70 @@ type Msg = {
   ts: number;
 };
 
-type RoomState = {
-  active: Set<string>;
-  messages: Msg[];
-};
+const TTL_SECONDS = 10 * 24 * 60 * 60; // 10 дни
+const MAX_MESSAGES = 200;
 
-const g = globalThis as any;
-g.__CHAT_ROOMS__ = g.__CHAT_ROOMS__ || new Map<string, RoomState>();
-const rooms: Map<string, RoomState> = g.__CHAT_ROOMS__;
+function roomKey(roomId: string) {
+  return `chat:room:${roomId}:messages`;
+}
 
-function getRoom(roomId: string): RoomState {
-  let r = rooms.get(roomId);
-  if (!r) {
-    r = { active: new Set(), messages: [] };
-    rooms.set(roomId, r);
-  }
-  return r;
+function safeRoomId(v: string | null) {
+  const r = (v || "default").trim();
+  return r.length ? r : "default";
 }
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const roomId = searchParams.get("roomId") || "default";
+  const roomId = safeRoomId(searchParams.get("roomId"));
+  const key = roomKey(roomId);
 
-  const room = getRoom(roomId);
-  return Response.json({
-    messages: room.messages,
-    activeCount: room.active.size,
-  });
+  const messages = (await kv.get<Msg[]>(key)) ?? [];
+
+  return NextResponse.json(
+    { roomId, messages },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      },
+    }
+  );
 }
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
-  if (!body) return Response.json({ ok: false }, { status: 400 });
 
-  const { action, roomId = "default", clientId, message } = body as {
-    action: "join" | "leave" | "append" | "clear";
-    roomId?: string;
-    clientId?: string;
-    message?: Msg;
-  };
+  const action = body?.action as string | undefined;
+  const roomId = safeRoomId(body?.roomId ?? null);
+  const key = roomKey(roomId);
 
-  const room = getRoom(roomId);
-
-  if (action === "join") {
-    if (clientId) room.active.add(clientId);
-    return Response.json({ ok: true, activeCount: room.active.size });
-  }
-
-  if (action === "leave") {
-    if (clientId) room.active.delete(clientId);
-
-    // ако последният излезе -> чистим всичко
-    if (room.active.size === 0) {
-      room.messages = [];
-    }
-    return Response.json({ ok: true, activeCount: room.active.size });
+  // join/leave можеш да ги оставиш “no-op” (не пречат)
+  if (action === "join" || action === "leave") {
+    return NextResponse.json({ ok: true });
   }
 
   if (action === "append") {
-    if (!message) return Response.json({ ok: false }, { status: 400 });
-
-    // dedupe по id
-    if (!room.messages.some((m) => m.id === message.id)) {
-      room.messages.push(message);
-      room.messages = room.messages
-        .sort((a, b) => a.ts - b.ts)
-        .slice(-50); // лимит 50
+    const msg = body?.message as Msg | undefined;
+    if (!msg?.id || !msg?.from || !msg?.type || !msg?.ts) {
+      return NextResponse.json({ error: "Bad message payload" }, { status: 400 });
     }
 
-    return Response.json({ ok: true, count: room.messages.length });
+    const current = (await kv.get<Msg[]>(key)) ?? [];
+
+    // защита от duplicate по id
+    if (!current.some((m) => m.id === msg.id)) {
+      const next = [...current, msg]
+        .sort((a, b) => a.ts - b.ts)
+        .slice(-MAX_MESSAGES);
+
+      // set + TTL (изтрива се автоматично след 10 дни без активност)
+      await kv.set(key, next, { ex: TTL_SECONDS });
+    } else {
+      // ако е duplicate – пак “освежаваме” TTL, за да не се губи стаята рано
+      await kv.expire(key, TTL_SECONDS);
+    }
+
+    return NextResponse.json({ ok: true });
   }
 
-  if (action === "clear") {
-    room.messages = [];
-    return Response.json({ ok: true });
-  }
-
-  return Response.json({ ok: false }, { status: 400 });
+  return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }
