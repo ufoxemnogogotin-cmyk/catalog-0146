@@ -14,18 +14,16 @@ type Msg = {
   ts: number;
 };
 
-const CLIENT_ID_KEY = "sevato_chat_client_id_v1";
-
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-function getOrCreateClientId() {
+function getOrCreateClientId(storageKey: string) {
   try {
-    const saved = sessionStorage.getItem(CLIENT_ID_KEY);
+    const saved = sessionStorage.getItem(storageKey);
     if (saved) return saved;
     const fresh = `c_${uid()}`;
-    sessionStorage.setItem(CLIENT_ID_KEY, fresh);
+    sessionStorage.setItem(storageKey, fresh);
     return fresh;
   } catch {
     return `c_${uid()}`;
@@ -37,10 +35,17 @@ async function apiState(payload: any) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    cache: "no-store",
   });
 }
 
-export default function ChatWidget({ roomId = "default" }: { roomId?: string }) {
+export default function ChatWidget({
+  roomId = "default",
+  clientIdKey = "sevato_chat_client_id_v1",
+}: {
+  roomId?: string;
+  clientIdKey?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -48,23 +53,19 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   const fileRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  const clientId = useMemo(() => getOrCreateClientId(), []);
+  const clientId = useMemo(() => getOrCreateClientId(clientIdKey), [clientIdKey]);
   const channelName = `chat:${roomId}`;
 
   const ablyRef = useRef<Ably.Realtime | null>(null);
 
-  // ✅ init Ably ONLY on client after mount
+  // Init Ably (client only)
   useEffect(() => {
     const base = window.location.origin;
     const authUrl = `${base}/api/ably/token?roomId=${encodeURIComponent(roomId)}&clientId=${encodeURIComponent(
       clientId
     )}`;
 
-    const rt = new Ably.Realtime({
-      clientId,
-      authUrl,
-    });
-
+    const rt = new Ably.Realtime({ clientId, authUrl });
     ablyRef.current = rt;
 
     return () => {
@@ -75,14 +76,16 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
     };
   }, [roomId, clientId]);
 
-  // 1) JOIN room + load history
+  // Load history from KV API
   useEffect(() => {
     let alive = true;
 
     (async () => {
       await apiState({ action: "join", roomId, clientId });
 
-      const res = await fetch(`/api/chat/state?roomId=${encodeURIComponent(roomId)}`);
+      const res = await fetch(`/api/chat/state?roomId=${encodeURIComponent(roomId)}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
 
       if (!alive) return;
@@ -94,7 +97,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
     };
   }, [roomId, clientId]);
 
-  // 2) LEAVE room on tab close
+  // Leave on unload
   useEffect(() => {
     const onUnload = () => {
       try {
@@ -116,7 +119,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
     return () => window.removeEventListener("beforeunload", onUnload);
   }, [roomId, clientId]);
 
-  // 3) Subscribe realtime
+  // Subscribe realtime
   useEffect(() => {
     const rt = ablyRef.current;
     if (!rt) return;
@@ -130,7 +133,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
 
       setMessages((prev) => {
         if (prev.some((x) => x.id === data.id)) return prev;
-        return [...prev, data].sort((a, b) => a.ts - b.ts).slice(-50);
+        return [...prev, data].sort((a, b) => a.ts - b.ts).slice(-200);
       });
     });
 
@@ -142,13 +145,13 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
     };
   }, [channelName]);
 
-  // 4) autoscroll
+  // Autoscroll
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [open, messages]);
 
-  // ✅ 5) HARD scroll lock (body + iOS touchmove block)
+  // HARD scroll lock (iOS-friendly)
   useEffect(() => {
     if (!open) return;
 
@@ -164,21 +167,16 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
       htmlOverflow: html.style.overflow,
     };
 
-    // freeze page
     html.style.overflow = "hidden";
     body.style.overflow = "hidden";
     body.style.position = "fixed";
     body.style.top = `-${scrollY}px`;
     body.style.width = "100%";
 
-    // iOS: prevent scrolling outside the chat
     const onTouchMove = (e: TouchEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
-
-      // allow scroll inside the chat panel body
       if (target.closest(".cw-body")) return;
-
       e.preventDefault();
     };
 
@@ -198,11 +196,12 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   }, [open]);
 
   async function publishAndStore(payload: Msg) {
+    // store in KV
     await apiState({ action: "append", roomId, message: payload });
 
+    // realtime
     const rt = ablyRef.current;
     if (!rt) return;
-
     const ch = rt.channels.get(channelName);
     await ch.publish("msg", payload);
   }
@@ -213,7 +212,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
 
     const msg: Msg = { id: uid(), from: clientId, type: "text", text: t, ts: Date.now() };
 
-    setMessages((prev) => [...prev, msg].slice(-50));
+    setMessages((prev) => [...prev, msg].slice(-200));
     setInput("");
 
     try {
@@ -224,7 +223,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
   }
 
   async function onPickImage(file: File) {
-    const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // ✅ 8MB
+    const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB
 
     if (file.size > MAX_IMAGE_BYTES) {
       alert("Снимката е твърде голяма (max 8MB).");
@@ -236,7 +235,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
       const url = String(reader.result || "");
       const msg: Msg = { id: uid(), from: clientId, type: "image", imageDataUrl: url, ts: Date.now() };
 
-      setMessages((prev) => [...prev, msg].slice(-50));
+      setMessages((prev) => [...prev, msg].slice(-200));
 
       try {
         await publishAndStore(msg);
@@ -245,10 +244,6 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
       }
     };
     reader.readAsDataURL(file);
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") sendText();
   }
 
   function clearLocalOnly() {
@@ -311,7 +306,7 @@ export default function ChatWidget({ roomId = "default" }: { roomId?: string }) 
               className="cw-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKeyDown}
+              onKeyDown={(e) => e.key === "Enter" && sendText()}
               placeholder="Напиши съобщение…"
             />
 

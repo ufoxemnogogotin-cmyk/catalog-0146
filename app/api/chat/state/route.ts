@@ -16,9 +16,7 @@ type Msg = {
 const TTL_SECONDS = 10 * 24 * 60 * 60; // 10 дни
 const MAX_MESSAGES = 200;
 
-function roomKey(roomId: string) {
-  return `chat:room:${roomId}:messages`;
-}
+const keyMessages = (roomId: string) => `chat:room:${roomId}:messages`;
 
 function safeRoomId(v: string | null) {
   const r = (v || "default").trim();
@@ -28,7 +26,7 @@ function safeRoomId(v: string | null) {
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const roomId = safeRoomId(searchParams.get("roomId"));
-  const key = roomKey(roomId);
+  const key = keyMessages(roomId);
 
   const messages = (await kv.get<Msg[]>(key)) ?? [];
 
@@ -36,7 +34,7 @@ export async function GET(req: Request) {
     { roomId, messages },
     {
       headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Cache-Control": "no-store",
       },
     }
   );
@@ -47,10 +45,10 @@ export async function POST(req: Request) {
 
   const action = body?.action as string | undefined;
   const roomId = safeRoomId(body?.roomId ?? null);
-  const key = roomKey(roomId);
+  const key = keyMessages(roomId);
 
-  // join/leave можеш да ги оставиш “no-op” (не пречат)
   if (action === "join" || action === "leave") {
+    // no-op, но валидно
     return NextResponse.json({ ok: true });
   }
 
@@ -62,16 +60,13 @@ export async function POST(req: Request) {
 
     const current = (await kv.get<Msg[]>(key)) ?? [];
 
-    // защита от duplicate по id
     if (!current.some((m) => m.id === msg.id)) {
       const next = [...current, msg]
         .sort((a, b) => a.ts - b.ts)
         .slice(-MAX_MESSAGES);
 
-      // set + TTL (изтрива се автоматично след 10 дни без активност)
       await kv.set(key, next, { ex: TTL_SECONDS });
     } else {
-      // ако е duplicate – пак “освежаваме” TTL, за да не се губи стаята рано
       await kv.expire(key, TTL_SECONDS);
     }
 
