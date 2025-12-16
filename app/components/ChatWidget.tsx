@@ -136,6 +136,10 @@ export default function ChatWidget({
         return [...prev, data].sort((a, b) => a.ts - b.ts).slice(-200);
       });
     });
+ch.subscribe("clear", () => {
+  if (!mounted) return;
+  setMessages([]);
+});
 
     return () => {
       mounted = false;
@@ -246,10 +250,23 @@ export default function ChatWidget({
     reader.readAsDataURL(file);
   }
 
-  function clearLocalOnly() {
-    setMessages([]);
-    setInput("");
+async function clearChatForAll() {
+  if (!confirm("Да изтрия чата за всички?")) return;
+
+  // 1) чистим UI веднага
+  setMessages([]);
+  setInput("");
+
+  // 2) казваме на сървъра да изтрие KV историята
+  await apiState({ action: "clear", roomId });
+
+  // 3) пращаме realtime event, за да се изчисти и при другия отворен таб
+  const rt = ablyRef.current;
+  if (rt) {
+    const ch = rt.channels.get(channelName);
+    await ch.publish("clear", { roomId });
   }
+}
 
   const canSend = input.trim().length > 0;
 
@@ -269,7 +286,7 @@ export default function ChatWidget({
           <div className="cw-head">
             <div className="cw-title">Чат</div>
             <div className="cw-actions">
-              <button type="button" className="cw-iconBtn" onClick={clearLocalOnly} title="Изтрий (само при теб)">
+              <button type="button" className="cw-iconBtn" onClick={clearChatForAll} title="Изтрий чата">
                 <FiTrash2 />
               </button>
               <button type="button" className="cw-iconBtn" onClick={() => setOpen(false)} title="Затвори">

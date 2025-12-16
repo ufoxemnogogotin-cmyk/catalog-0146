@@ -48,7 +48,11 @@ export async function POST(req: Request) {
   const key = keyMessages(roomId);
 
   if (action === "join" || action === "leave") {
-    // no-op, но валидно
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === "clear") {
+    await kv.del(key); // chat:room:${roomId}:messages
     return NextResponse.json({ ok: true });
   }
 
