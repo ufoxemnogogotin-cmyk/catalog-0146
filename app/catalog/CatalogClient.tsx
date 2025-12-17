@@ -9,7 +9,6 @@ const inter = Inter({ subsets: ["latin", "cyrillic"], weight: ["500"] });
 
 const EUR_RATE = 1.95583;
 
-
 type Item = {
   name: string;
   ref: string;
@@ -32,6 +31,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Керамика",
   },
+
   // SUPEROCEAN - M05
   {
     name: "SUPEROCEAN",
@@ -42,6 +42,18 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана 904L",
   },
+
+  // SUPEROCEAN - M08 (NEW) CAT-0146-11
+  {
+    name: "SUPEROCEAN",
+    ref: "CAT-0146-11",
+    priceBgn: 1168,
+    sizeMm: 46,
+    image: "/models/m08.png",
+    movement: "Автоматичен",
+    material: "Неръждаема стомана 904L",
+  },
+
   // DAYTONA - M04
   {
     name: "DAYTONA",
@@ -53,6 +65,7 @@ const items: Item[] = [
     material: "Неръждаема стомана",
     coating: "18K златно покритие (PVD)",
   },
+
   // DATEJUST BS - M02
   {
     name: "DATEJUST BS",
@@ -63,6 +76,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана 904L",
   },
+
   // DATEJUST BR - M03 (40mm)
   {
     name: "DATEJUST BR",
@@ -74,6 +88,7 @@ const items: Item[] = [
     material: "Неръждаема стомана",
     coating: "18K розово златно покритие (PVD)",
   },
+
   // DATEJUST SS - M01
   {
     name: "DATEJUST SS",
@@ -84,6 +99,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана",
   },
+
   // DATEJUST R LOGO - M07
   {
     name: "DATEJUST R LOGO",
@@ -94,6 +110,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана 316L",
   },
+
   // S MOD R LOGO - M03
   {
     name: "S MOD R LOGO",
@@ -104,6 +121,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана 316L",
   },
+
   // S MOD R LOGO - M01
   {
     name: "S MOD R LOGO",
@@ -114,6 +132,7 @@ const items: Item[] = [
     movement: "Автоматичен",
     material: "Неръждаема стомана 316L",
   },
+
   // S MOD R LOGO CAT-0146-10 - M04 (mega quartz)
   {
     name: "S MOD R LOGO",
@@ -146,13 +165,9 @@ export default function CatalogClient({
   chatId: string;
   role?: "client" | "client1";
 }) {
-
-
-
-
   const [open, setOpen] = useState<Item | null>(null);
 
-  // lock scroll + ESC close (but no "ESC text")
+  // lock scroll + ESC close
   useEffect(() => {
     if (!open) return;
 
@@ -182,7 +197,7 @@ export default function CatalogClient({
   }, [open]);
 
   const count = modalParams.length;
-  const paramsRightOnDesktop = count === 3; // keep your "3 params -> right" desktop vibe
+  const paramsRightOnDesktop = count === 3;
 
   return (
     <main className={`${inter.className} wrap`}>
@@ -236,7 +251,12 @@ export default function CatalogClient({
           <div className="modal">
             <div className="modalTop">
               <div className="modalTitle">{open.name}</div>
-              <button className="closeBtn" onClick={() => setOpen(null)} aria-label="Затвори" type="button">
+              <button
+                className="closeBtn"
+                onClick={() => setOpen(null)}
+                aria-label="Затвори"
+                type="button"
+              >
                 ×
               </button>
             </div>
@@ -246,23 +266,18 @@ export default function CatalogClient({
             </div>
 
             <div className={`modalBottom ${paramsRightOnDesktop ? "paramsRight" : ""}`}>
-              {/* LEFT: price + ref */}
               <div className="modalLeft">
                 <div className="modalPriceRow">
                   <div className="modalPrice">
                     {open.priceBgn} лв. <span className="slash">/</span>{" "}
                     <span className="eur">{formatEURFromBGN(open.priceBgn)} €</span>
                   </div>
-
-                  {/* mobile: ref to the right of the price */}
                   <div className="modalRefInline">{open.ref}</div>
                 </div>
 
-                {/* desktop: ref below price */}
                 <div className="modalRefBelow">{open.ref}</div>
               </div>
 
-              {/* PARAMS */}
               <div
                 className={[
                   "params",
@@ -290,12 +305,11 @@ export default function CatalogClient({
           </div>
         </div>
       )}
-<ChatWidget roomId={chatId} role={role} />
+
+      <ChatWidget roomId={chatId} role={role} />
 
       <style>{`
-        :root{
-          --line:#111;
-        }
+        :root{ --line:#111; }
 
         .wrap{
           max-width: 1120px;
@@ -314,7 +328,6 @@ export default function CatalogClient({
         .title{ font-size: 26px; font-weight: 500; letter-spacing: .2px; }
         .subtitle{ opacity: .8; margin-top: 6px; font-weight: 500; }
 
-        /* GRID (старият) */
         .grid{
           display:grid;
           grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -327,7 +340,6 @@ export default function CatalogClient({
           .grid{ grid-template-columns: 1fr; }
         }
 
-        /* CARD */
         .card{
           text-align:left;
           border: 2px solid var(--line);
@@ -370,7 +382,7 @@ export default function CatalogClient({
 
         .oSymbol{
           display:inline-block;
-          margin-right: 3px; /* +3px spacing after Ø */
+          margin-right: 3px;
         }
 
         .imgBox{
@@ -385,7 +397,7 @@ export default function CatalogClient({
           max-height: 235px;
           max-width: 88%;
           object-fit: contain;
-          transform: scale(1.10); /* +10% */
+          transform: scale(1.10);
         }
 
         .cardBottom{
@@ -414,7 +426,6 @@ export default function CatalogClient({
           white-space: nowrap;
         }
 
-        /* MODAL */
         .overlay{
           position: fixed;
           inset: 0;
@@ -523,30 +534,23 @@ export default function CatalogClient({
           white-space: nowrap;
         }
 
-        /* PARAMS core rules */
         .params{
           flex: 1;
           display:grid;
           align-items:start;
           justify-items:start;
-          row-gap: 10px; /* rows distance = 10px */
+          row-gap: 10px;
           column-gap: 20px;
         }
 
-        .params.oneCol{
-          grid-template-columns: 1fr;
-        }
-
-        /* mobile = 1 col ALWAYS; desktop can become 2 cols for 4 params */
-        .params.twoCols{
-          grid-template-columns: 1fr; /* phone default */
-        }
+        .params.oneCol{ grid-template-columns: 1fr; }
+        .params.twoCols{ grid-template-columns: 1fr; }
 
         .param{
           display:flex;
           align-items:baseline;
           justify-content:flex-start;
-          gap: 10px; /* label ↔ value = 10px */
+          gap: 10px;
           text-align:left;
         }
 
@@ -563,69 +567,44 @@ export default function CatalogClient({
           font-size: 13px;
         }
 
-        /* 3 params on desktop -> push params area to the right (your vibe) */
-        .modalBottom.paramsRight{
-          align-items: flex-start;
-        }
-        .params.desktopRight{
-          max-width: 420px;
-          margin-left: auto;
-        }
+        .modalBottom.paramsRight{ align-items: flex-start; }
+        .params.desktopRight{ max-width: 420px; margin-left: auto; }
 
-        /* DESKTOP: 4 params -> 2x2 */
         @media (min-width: 761px){
           .params.twoCols{
-            grid-template-columns: repeat(2, minmax(0, 1fr)); /* 2x2 on desktop */
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
         }
 
-        /* MOBILE modal layout */
         @media (max-width: 760px){
-          .modal{
-            width: min(520px, 96vw);
-          }
-
-          .modalBody{
-            height: 420px;
-          }
-
-          .modalImg{
-            max-height: 360px;
-          }
+          .modal{ width: min(520px, 96vw); }
+          .modalBody{ height: 420px; }
+          .modalImg{ max-height: 360px; }
 
           .modalBottom{
             flex-direction: column;
             gap: 12px;
           }
 
-          /* price smaller so price+ref fits */
-          .modalPrice{
-            font-size: 18px;
-          }
-
+          .modalPrice{ font-size: 18px; }
           .modalRefInline{ display:block; }
           .modalRefBelow{ display:none; }
 
-          /* phone: params start from LEFT under price, stacked */
           .params{
             width: 100%;
             justify-items: start;
           }
           .params.oneCol,
           .params.twoCols{
-            grid-template-columns: 1fr; /* always stacked on phone */
+            grid-template-columns: 1fr;
           }
         }
 
         @media (max-width: 420px){
-          .modalPriceRow{
-            gap: 10px;
-          }
-          .modalRefInline{
-            font-size: 12px;
-          }
+          .modalPriceRow{ gap: 10px; }
+          .modalRefInline{ font-size: 12px; }
         }
       `}</style>
-</main>
+    </main>
   );
 }
